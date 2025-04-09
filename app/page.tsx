@@ -1,103 +1,201 @@
-import Image from "next/image";
+"use client"
+
+import { useState } from "react"
+import TheaterLayout from "@/components/theater-layout"
+import ReservationForm from "@/components/reservation-form"
+import Footer from "@/components/footer"
+import Header from "@/components/header"
+import ConfirmationModal from "@/components/confirmation-modal"
+import AboutSection from "@/components/about-section"
+import ShowsSection from "@/components/shows-section"
+import type { SeatType, CustomerInfo } from "@/lib/types"
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [selectedSeats, setSelectedSeats] = useState<Set<number>>(new Set())
+  const [suggestedSeats, setSuggestedSeats] = useState<Set<number>>(new Set())
+  const [showConfirmation, setShowConfirmation] = useState(false)
+  const [customerInfo, setCustomerInfo] = useState<CustomerInfo>({
+    name: "",
+    phone: "",
+    email: "",
+  })
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  // Theater configuration
+  const rows = 10
+  const seatsPerRow = 15
+
+  // Generate theater seats
+  const generateTheaterSeats = (): SeatType[] => {
+    const seats: SeatType[] = []
+    let id = 1
+
+    for (let row = 1; row <= rows; row++) {
+      for (let seatNum = 1; seatNum <= seatsPerRow; seatNum++) {
+        // Randomly set some seats as occupied (for demo purposes)
+        const isOccupied = Math.random() < 0.3
+
+        // Determine seat category based on row
+        let category: "vip" | "premium" | "general" = "general"
+        if (row <= 3) {
+          category = "vip"
+        } else if (row <= 6) {
+          category = "premium"
+        }
+
+        seats.push({
+          id,
+          row,
+          number: seatNum,
+          isOccupied,
+          category,
+          price: category === "vip" ? 25000 : category === "premium" ? 18000 : 10000,
+        })
+
+        id++
+      }
+    }
+
+    return seats
+  }
+
+  const theaterSeats = generateTheaterSeats()
+
+  // Calculate total price
+  const calculateTotalPrice = () => {
+    return Array.from(selectedSeats).reduce((total, seatId) => {
+      const seat = theaterSeats.find((s) => s.id === seatId)
+      return total + (seat?.price || 0)
+    }, 0)
+  }
+
+  // Handle seat selection
+  const handleSeatSelect = (seatId: number) => {
+    const newSelectedSeats = new Set(selectedSeats)
+
+    if (newSelectedSeats.has(seatId)) {
+      newSelectedSeats.delete(seatId)
+    } else {
+      newSelectedSeats.add(seatId)
+    }
+
+    setSelectedSeats(newSelectedSeats)
+    // Clear suggestions when manually selecting
+    setSuggestedSeats(new Set())
+  }
+
+  // Suggest seats function
+  const suggestSeats = (numSeats: number) => {
+    if (numSeats <= 0 || numSeats > seatsPerRow) {
+      setSuggestedSeats(new Set())
+      return
+    }
+
+    // Get rows ordered by distance from center
+    const centerRow = Math.ceil(rows / 2)
+    const rowsOrderedByCenter = Array.from({ length: rows }, (_, i) => i + 1).sort(
+      (a, b) => Math.abs(a - centerRow) - Math.abs(b - centerRow),
+    )
+
+    for (const row of rowsOrderedByCenter) {
+      // Get all seats in this row
+      const seatsInRow = theaterSeats.filter((seat) => seat.row === row && !seat.isOccupied)
+
+      // Find consecutive available seats
+      for (let i = 0; i <= seatsInRow.length - numSeats; i++) {
+        const consecutive = seatsInRow.slice(i, i + numSeats)
+
+        // Check if these seats are consecutive by number
+        const isConsecutive = consecutive.every(
+          (seat, index) => index === 0 || seat.number === consecutive[index - 1].number + 1,
+        )
+
+        if (isConsecutive) {
+          const suggestedIds = new Set(consecutive.map((seat) => seat.id))
+          setSuggestedSeats(suggestedIds)
+          return
+        }
+      }
+    }
+
+    // If no consecutive seats found
+    setSuggestedSeats(new Set())
+  }
+
+  // Confirm suggested seats
+  const confirmSuggestion = () => {
+    setSelectedSeats(suggestedSeats)
+    setSuggestedSeats(new Set())
+  }
+
+  // Cancel suggestion
+  const cancelSuggestion = () => {
+    setSuggestedSeats(new Set())
+  }
+
+  // Complete reservation
+  const completeReservation = (info: CustomerInfo) => {
+    if (selectedSeats.size > 0) {
+      setCustomerInfo(info)
+      setShowConfirmation(true)
+    }
+  }
+
+  // Close confirmation modal and reset
+  const closeConfirmation = () => {
+    setShowConfirmation(false)
+    setSelectedSeats(new Set())
+    setCustomerInfo({
+      name: "",
+      phone: "",
+      email: "",
+    })
+  }
+
+  return (
+    <main className="min-h-screen flex flex-col bg-gray-900 text-gray-100 scroll-smooth">
+      <Header />
+
+      <div id="home" className="container mx-auto px-4 py-8 flex-grow">
+        <h1 className="text-3xl font-bold text-center mb-8 text-red-400">TEATRO UNA - Reserva de Asientos</h1>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2">
+            <TheaterLayout
+              seats={theaterSeats}
+              selectedSeats={selectedSeats}
+              suggestedSeats={suggestedSeats}
+              onSeatSelect={handleSeatSelect}
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          </div>
+
+          <div className="lg:col-span-1">
+            <ReservationForm
+              onSuggest={suggestSeats}
+              selectedSeatsCount={selectedSeats.size}
+              suggestedSeatsCount={suggestedSeats.size}
+              totalPrice={calculateTotalPrice()}
+              onConfirmSuggestion={confirmSuggestion}
+              onCancelSuggestion={cancelSuggestion}
+              onCompleteReservation={completeReservation}
+            />
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+      </div>
+
+      <ShowsSection />
+
+      <AboutSection />
+
+      <Footer />
+
+      {showConfirmation && (
+        <ConfirmationModal
+          seatCount={selectedSeats.size}
+          totalPrice={calculateTotalPrice()}
+          customerInfo={customerInfo}
+          onClose={closeConfirmation}
+        />
+      )}
+    </main>
+  )
 }
